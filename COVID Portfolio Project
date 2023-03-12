@@ -1,0 +1,118 @@
+
+-- Looking at Total Cases vs Total Deaths, showing likelihood of dying if you have COVID in your country
+SELECT Location, date, total_cases, total_deaths, (total_deaths/total_cases)*100 as DeathPercentage
+FROM PortfolioProject..CovidDeaths
+WHERE location like '%states%'
+ORDER BY 1, 2
+
+
+-- Looking at Total Cases vs Population
+SELECT Location, date, population, total_cases, (total_cases/population)*100 as CasePercentage
+FROM PortfolioProject..CovidDeaths
+WHERE location like 'United States'
+ORDER BY 1, 2
+
+
+-- Looking at countries with highest infection rate compared to population
+SELECT Location, Population,  MAX(total_cases) as TotalInfectionCount, MAX(total_cases/population)*100 as PercentPopulationInfected
+FROM PortfolioProject..CovidDeaths
+GROUP BY Location, Population
+ORDER BY 4 desc
+
+
+-- Looking at countries with highest death count
+SELECT Location,  MAX(cast(total_deaths as int)) as TotalDeathCount
+FROM PortfolioProject..CovidDeaths
+WHERE continent is not null
+GROUP BY Location
+ORDER BY 2 Desc
+
+
+-- Looking at continent with highest death count
+SELECT location,  MAX(cast(total_deaths as int)) as TotalDeathCount
+FROM PortfolioProject..CovidDeaths
+WHERE continent is null
+GROUP BY location
+ORDER BY 2 Desc
+
+
+-- Global death percentage by date
+SELECT date, SUM(new_cases) as NewCases, SUM (new_deaths) as NewDeaths, 
+SUM(cast(new_deaths as float))/SUM(cast(new_cases as float))*100 as DeathPercentage
+FROM PortfolioProject..CovidDeaths
+WHERE continent is not null
+GROUP BY date
+ORDER BY 1, 2
+
+
+-- Joining CovidDeaths and CovidVaccinations tables
+SELECT *
+FROM CovidDeaths dea
+JOIN CovidVaccinations vac
+    ON dea.location = vac.location 
+    AND dea.date = vac.date
+
+-- Looking at Total Population vs Vaccinations
+    -- Performs rolling count with total_vaccinations
+SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations, 
+SUM(vac.new_vaccinations) OVER (PARTITION BY dea.location ORDER BY dea.location, dea.date) as total_vaxed --can't add '(total_vaccinations/population)*100; will have to create CTE/temp table 
+FROM CovidDeaths dea
+JOIN CovidVaccinations vac
+    ON dea.location = vac.location 
+    AND dea.date = vac.date
+WHERE dea.continent is not NULL 
+ORDER BY 1, 2, 3
+
+-- Use CTE to find percent of population vaccinated by day, using totalvaxed
+
+WITH PopvsVac(continent, location, date, population, new_vaccinations, totalvaxed)
+AS
+(
+    SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations, 
+SUM(vac.new_vaccinations) OVER (PARTITION BY dea.location ORDER BY dea.location, dea.date) as total_vaxed 
+FROM CovidDeaths dea
+JOIN CovidVaccinations vac
+    ON dea.location = vac.location 
+    AND dea.date = vac.date
+WHERE dea.continent is not NULL 
+)
+
+SELECT *, (totalvaxed/cast(population as float))*100 as percentpopvaxed
+FROM PopvsVac
+
+
+-- TEMP TABLE
+CREATE TABLE #PercentPopulationVaccinated
+(
+Continent NVARCHAR(255),
+Location NVARCHAR(255),
+Date datetime,
+Population NUMERIC,
+New_vaccinations NUMERIC,
+Totalvaxed NUMERIC
+)
+INSERT INTO #PercentPopulationVaccinated
+SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations, 
+SUM(vac.new_vaccinations) OVER (PARTITION BY dea.location ORDER BY dea.location, dea.date) as total_vaxed --can't add '(total_vaccinations/population)*100; will have to create CTE/temp table 
+FROM CovidDeaths dea
+JOIN CovidVaccinations vac
+    ON dea.location = vac.location 
+    AND dea.date = vac.date
+
+
+SELECT *, (totalvaxed/population)*100 percentpopvaxed
+FROM #PercentPopulationVaccinated
+
+
+-- Creating view to store data for later visualizations
+
+CREATE VIEW PercentPopulationVaccinated AS
+SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations, 
+SUM(vac.new_vaccinations) OVER (PARTITION BY dea.location ORDER BY dea.location, dea.date) as total_vaxed 
+FROM CovidDeaths dea
+JOIN CovidVaccinations vac
+    ON dea.location = vac.location 
+    AND dea.date = vac.date
+WHERE dea.continent is not NULL 
+
+
